@@ -86,6 +86,12 @@ All metrics represent **reproducible, empirically measured production data** cap
 ├── CASE_STUDY.md                  # Comprehensive Incident Forensics, Triage & Post-Mortem
 ├── ARCHITECTURE.md                # Deep-dive into Windows Internals, NDIS, CompactOS & Memory
 ├── LICENSE                        # MIT License
+├── docs/                          # Specialized Technical Runbooks & Forensic Post-Mortems
+│   ├── NDIS_FILTER_COLLISION_TRIAGE.md     # ICS crash post-mortem & oracle_VBoxNetLwf decoupling
+│   ├── START_MENU_INPUT_LATENCY_RUNBOOK.md # Windows Key & SearchApp zero-latency tuning
+│   ├── ELECTRON_HEADLESS_DRIFT_TRIAGE.md   # Electron viewport drift & zombie process recovery
+│   ├── AUTOMATED_TESTING_LEAK_FORENSICS.md # Puppeteer profile leakage & GC engine architecture
+│   └── COMPACTOS_NTFS_COMPRESSION_GUIDE.md # CompactOS XPRESS/LZX kernel transparent compression
 ├── scripts/
 │   ├── optimize.ps1               # Automated Maintenance Engine v2.0 (Status, Clean, Tune)
 │   ├── tune-responsiveness.ps1    # Input latency, typing responsiveness & shell animator tuner
@@ -140,10 +146,21 @@ compact /compactos:always
 
 ---
 
-## 📖 Deep Technical Documentation
+## 📖 Deep Technical Documentation & Runbooks
 
+### 🏛️ Core Architectural Documents
 * 📄 **[CASE_STUDY.md](CASE_STUDY.md)** — Step-by-step incident response, NDIS crash forensics (`ipnathlp.dll`), Puppeteer artifact leakage, and storage recovery methodologies.
 * 🧠 **[ARCHITECTURE.md](ARCHITECTURE.md)** — Technical deep-dive into NT Quantum Scheduling, CompactOS compression algorithms, NDIS 6.x Lightweight Filters, and Win32 Raw Input queue dynamics.
+
+### 📚 Specialized Deep-Dive Guides (`docs/`)
+
+| Document | Scope & Technical Engineering Coverage |
+| :--- | :--- |
+| **[docs/NDIS_FILTER_COLLISION_TRIAGE.md](docs/NDIS_FILTER_COLLISION_TRIAGE.md)** | **ICS Subsystem Access Violation Post-Mortem:** Forensic investigation into `ipnathlp.dll` crash (`0xc0000005`) caused by VirtualBox `oracle_VBoxNetLwf` NDIS6 filter driver, with programmatic decoupling runbook. |
+| **[docs/START_MENU_INPUT_LATENCY_RUNBOOK.md](docs/START_MENU_INPUT_LATENCY_RUNBOOK.md)** | **Windows Key & SearchApp Input Latency:** Low-level anatomy of Start Menu delays, Bing Web Search API elimination, Cortana consent decoupling, and sub-30ms local-only search configuration. |
+| **[docs/ELECTRON_HEADLESS_DRIFT_TRIAGE.md](docs/ELECTRON_HEADLESS_DRIFT_TRIAGE.md)** | **Electron Multi-Monitor Viewport Drift:** Post-mortem of Claude Desktop white screen hangs, 15 zombie process memory retention, and off-screen window coordinate drift (`window-state.json`). |
+| **[docs/AUTOMATED_TESTING_LEAK_FORENSICS.md](docs/AUTOMATED_TESTING_LEAK_FORENSICS.md)** | **Headless Browser Test Profile Forensics:** Audit of 66 leaked Puppeteer profiles (~1.15 GB in Temp), Docker update bloat, and the upgraded multi-pattern GC architecture in `optimize.ps1` v2.0. |
+| **[docs/COMPACTOS_NTFS_COMPRESSION_GUIDE.md](docs/COMPACTOS_NTFS_COMPRESSION_GUIDE.md)** | **CompactOS Kernel File Compression:** Mechanics of `wof.sys`, XPRESS/LZX algorithms, and empirical proof of how reading smaller compressed blocks over SATA SSD accelerates system I/O while saving 2.5–4 GB. |
 
 ---
 
