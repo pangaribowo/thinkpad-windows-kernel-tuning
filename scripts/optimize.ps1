@@ -108,13 +108,20 @@ function Invoke-Clean {
     
     $freedTotal = 0
     
-    # 1. User Temp
-    Write-Info "Cleaning User Temp..."
+    # 1. User Temp (including Puppeteer profiles, Docker updates, Claude temp)
+    Write-Info "Cleaning User Temp & test artifacts..."
     $before = Get-FolderSize $env:TEMP
+    
+    Get-ChildItem $env:TEMP -Directory -Filter "puppeteer_dev_chrome_profile-*" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    $dockUp = Join-Path $env:TEMP "DockerDesktopUpdates"
+    if (Test-Path $dockUp) { Remove-Item $dockUp -Recurse -Force -ErrorAction SilentlyContinue }
+    $claudeT = Join-Path $env:TEMP "claude"
+    if (Test-Path $claudeT) { Remove-Item $claudeT -Recurse -Force -ErrorAction SilentlyContinue }
+    
     Get-ChildItem $env:TEMP -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-1) } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     $after = Get-FolderSize $env:TEMP
     $freed = $before - $after; if ($freed -gt 0) { $freedTotal += $freed }
-    Write-Del "User Temp: $(Format-Size $freed)"
+    Write-Del "User Temp & Artifacts: $(Format-Size $freed)"
     
     # 2. System Temp
     $before = Get-FolderSize "C:\Windows\Temp"
@@ -141,13 +148,13 @@ function Invoke-Clean {
     $freed = $before - $after; if ($freed -gt 0) { $freedTotal += $freed }
     Write-Del "Windows Update Cache: $(Format-Size $freed)"
     
-    # 5. Brave Browser Cache
+    # 5. Brave Browser Cache (all profiles)
     Write-Info "Cleaning Brave browser caches..."
     $braveBase = "$env:LOCALAPPDATA\BraveSoftware\Brave-Browser\User Data"
     $braveFreed = 0
-    $braveProfiles = Get-ChildItem $braveBase -Directory -Filter "Profile*" -ErrorAction SilentlyContinue
+    $braveProfiles = Get-ChildItem $braveBase -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "Profile*" -or $_.Name -eq "Default" }
     foreach ($bp in $braveProfiles) {
-        $cacheDirs = @("Cache", "Code Cache", "GPUCache", "Service Worker\CacheStorage")
+        $cacheDirs = @("Cache", "Code Cache", "GPUCache", "DawnGraphiteCache", "DawnWebGPUCache", "GrShaderCache", "ShaderCache", "Service Worker\ScriptCache", "Service Worker\CacheStorage")
         foreach ($cd in $cacheDirs) {
             $cPath = Join-Path $bp.FullName $cd
             if (Test-Path $cPath) {
@@ -160,25 +167,82 @@ function Invoke-Clean {
     $freedTotal += $braveFreed
     Write-Del "Brave Browser Cache: $(Format-Size $braveFreed)"
     
-    # 6. Chrome Cache
-    $chromeBase = "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Cache"
-    if (Test-Path $chromeBase) {
-        $size = Get-FolderSize $chromeBase
-        Remove-Item "$chromeBase\*" -Recurse -Force -ErrorAction SilentlyContinue
-        $freedTotal += $size
-        Write-Del "Chrome Cache: $(Format-Size $size)"
+    # 6. Chrome Browser Cache (all profiles)
+    $chromeBase = "$env:LOCALAPPDATA\Google\Chrome\User Data"
+    $chromeFreed = 0
+    $chromeProfiles = Get-ChildItem $chromeBase -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "Profile*" -or $_.Name -eq "Default" }
+    foreach ($cp in $chromeProfiles) {
+        $cacheDirs = @("Cache", "Code Cache", "GPUCache", "Service Worker\CacheStorage")
+        foreach ($cd in $cacheDirs) {
+            $cPath = Join-Path $cp.FullName $cd
+            if (Test-Path $cPath) {
+                $size = Get-FolderSize $cPath
+                Remove-Item "$cPath\*" -Recurse -Force -ErrorAction SilentlyContinue
+                $chromeFreed += $size
+            }
+        }
     }
+    $freedTotal += $chromeFreed
+    Write-Del "Chrome Browser Cache: $(Format-Size $chromeFreed)"
     
-    # 7. npm cache
-    $npmCache = "$env:APPDATA\npm-cache"
-    if (Test-Path $npmCache) {
-        $size = Get-FolderSize $npmCache
-        Remove-Item $npmCache -Recurse -Force -ErrorAction SilentlyContinue
-        $freedTotal += $size
-        Write-Del "npm cache: $(Format-Size $size)"
+    # 7. Package Manager Caches (npm, pnpm, pip)
+    Write-Info "Cleaning Package Manager caches (npm, pnpm, pip)..."
+    $pkgFreed = 0
+    $pkgCaches = @(
+        "$env:APPDATA\npm-cache",
+        "$env:LOCALAPPDATA\npm-cache",
+        "$env:LOCALAPPDATA\pnpm-cache"
+    )
+    foreach ($pc in $pkgCaches) {
+        if (Test-Path $pc) {
+            $size = Get-FolderSize $pc
+            Remove-Item $pc -Recurse -Force -ErrorAction SilentlyContinue
+            $pkgFreed += $size
+        }
     }
+    try { & pip cache purge 2>$null | Out-Null } catch {}
+    $freedTotal += $pkgFreed
+    Write-Del "Package Caches (npm/pnpm/pip): $(Format-Size $pkgFreed)"
     
-    # 8. Recycle Bin
+    # 8. App Updater Pending Caches
+    Write-Info "Cleaning application updater caches..."
+    $updFreed = 0
+    $updaterDirs = @(
+        "$env:LOCALAPPDATA\antigravity-updater\pending",
+        "$env:LOCALAPPDATA\@mendeley-internaldesktop-reference-manager-updater\pending",
+        "$env:LOCALAPPDATA\obsidian-updater\pending",
+        "$env:LOCALAPPDATA\@flowprompterdesktop-updater\pending"
+    )
+    foreach ($ud in $updaterDirs) {
+        if (Test-Path $ud) {
+            $size = Get-FolderSize $ud
+            Remove-Item $ud -Recurse -Force -ErrorAction SilentlyContinue
+            $updFreed += $size
+        }
+    }
+    $freedTotal += $updFreed
+    Write-Del "App Updater Caches: $(Format-Size $updFreed)"
+
+    # 9. IDE Caches (VS Code, Cursor)
+    Write-Info "Cleaning IDE caches..."
+    $ideFreed = 0
+    $ideCacheDirs = @(
+        "$env:APPDATA\Code\CachedData",
+        "$env:APPDATA\Code\CachedExtensionVSIXs",
+        "$env:APPDATA\Code\Crashpad",
+        "$env:APPDATA\Cursor\CachedData"
+    )
+    foreach ($ic in $ideCacheDirs) {
+        if (Test-Path $ic) {
+            $size = Get-FolderSize $ic
+            Remove-Item "$ic\*" -Recurse -Force -ErrorAction SilentlyContinue
+            $ideFreed += $size
+        }
+    }
+    $freedTotal += $ideFreed
+    Write-Del "IDE Caches: $(Format-Size $ideFreed)"
+
+    # 10. Recycle Bin
     Write-Info "Scrubbing Recycle Bin..."
     Clear-RecycleBin -Force -ErrorAction SilentlyContinue
     Write-Del "Recycle Bin scrubbed"
