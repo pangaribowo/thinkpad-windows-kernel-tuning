@@ -92,8 +92,15 @@ After completion, verify that Windows operates in Compact state and measure free
 compact /compactos:query
 Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'" | Select-Object DeviceID, FreeSpace
 ```
-*Output when active:* `The system is in the Compact state. It will remain in this state unless an administrator changes it.`  
-*Observed Storage Recovery:* **+2.50 GB to +4.00 GB** reclaimed immediately.
+*Empirical Production Result (Lenovo ThinkPad T460s):*
+```text
+Completed Compressing OS binaries.
+52,493 files within 63,286 directories were compressed.
+9,983,512,949 total bytes of data are stored in 6,095,252,983 bytes.
+The compression ratio is 1.6 to 1.
+The system is in the Compact state.
+```
+*Observed Storage Recovery:* **+3.89 GB** reclaimed permanently, bringing total free storage to **27.29 GB**.
 
 ---
 
