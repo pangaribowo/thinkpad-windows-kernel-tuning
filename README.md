@@ -91,7 +91,8 @@ All metrics represent **reproducible, empirically measured production data** cap
 │   ├── START_MENU_INPUT_LATENCY_RUNBOOK.md # Windows Key & SearchApp zero-latency tuning
 │   ├── ELECTRON_HEADLESS_DRIFT_TRIAGE.md   # Electron viewport drift & zombie process recovery
 │   ├── AUTOMATED_TESTING_LEAK_FORENSICS.md # Puppeteer profile leakage & GC engine architecture
-│   └── COMPACTOS_NTFS_COMPRESSION_GUIDE.md # CompactOS XPRESS/LZX kernel transparent compression
+│   ├── COMPACTOS_NTFS_COMPRESSION_GUIDE.md # CompactOS XPRESS/LZX kernel transparent compression
+│   └── THINKPAD_T470_HARDWARE_SUBSYSTEM_TUNING.md # T470 Power Bridge, Wi-Fi 8260 MIMO & Memory Compression
 ├── scripts/
 │   ├── optimize.ps1               # Automated Maintenance Engine v2.0 (Status, Clean, Tune)
 │   ├── tune-responsiveness.ps1    # Input latency, typing responsiveness & shell animator tuner
@@ -156,6 +157,7 @@ compact /compactos:always
 
 | Document | Scope & Technical Engineering Coverage |
 | :--- | :--- |
+| **[docs/THINKPAD_T470_HARDWARE_SUBSYSTEM_TUNING.md](docs/THINKPAD_T470_HARDWARE_SUBSYSTEM_TUNING.md)** | **ThinkPad T470 Hardware & Subsystem Blueprint:** Full architectural tuning covering Memory Compression, Defender developer throttling, Wi-Fi 8260 dual-antenna MIMO, Power Bridge sleep drain, SpeedShift, and dual-channel upgrade path. |
 | **[docs/NDIS_FILTER_COLLISION_TRIAGE.md](docs/NDIS_FILTER_COLLISION_TRIAGE.md)** | **ICS Subsystem Access Violation Post-Mortem:** Forensic investigation into `ipnathlp.dll` crash (`0xc0000005`) caused by VirtualBox `oracle_VBoxNetLwf` NDIS6 filter driver, with programmatic decoupling runbook. |
 | **[docs/START_MENU_INPUT_LATENCY_RUNBOOK.md](docs/START_MENU_INPUT_LATENCY_RUNBOOK.md)** | **Windows Key & SearchApp Input Latency:** Low-level anatomy of Start Menu delays, Bing Web Search API elimination, Cortana consent decoupling, and sub-30ms local-only search configuration. |
 | **[docs/ELECTRON_HEADLESS_DRIFT_TRIAGE.md](docs/ELECTRON_HEADLESS_DRIFT_TRIAGE.md)** | **Electron Multi-Monitor Viewport Drift:** Post-mortem of Claude Desktop white screen hangs, 15 zombie process memory retention, and off-screen window coordinate drift (`window-state.json`). |
