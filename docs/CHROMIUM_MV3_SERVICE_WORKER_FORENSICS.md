@@ -113,15 +113,15 @@ Inspecting running `brave.exe` processes via `Get-Process brave | Select-Object 
    # as doing so desynchronizes Service Worker\Database and breaks Manifest V3 extensions (e.g., Tab Suspender).
    $cacheDirs = @("Cache", "Code Cache", "GPUCache", "DawnGraphiteCache", "DawnWebGPUCache", "GrShaderCache", "ShaderCache")
    ```
-2. **Added Atomic Self-Healing for Desynchronized Closed Profiles:**  
-   During `Invoke-Clean`, `optimize.ps1` now checks if `Service Worker\Database\CURRENT` exists while `ScriptCache\index` is missing, has `0` payload files, or has a `CreationTime` more than 2 minutes newer than `Database\CURRENT`. If the profile is closed (`Database\LOCK` is not held), it atomically resets `Database`, `ScriptCache`, and `CacheStorage` together so Chromium cleanly re-registers all Service Workers on the very first launch.
+2. **Added Atomic Self-Healing (`Repair-ChromiumServiceWorker`) for Desynchronized Closed Brave & Chrome Profiles:**  
+   During `Invoke-Clean`, `optimize.ps1` now runs `Repair-ChromiumServiceWorker` across **both Brave (18 profiles) and Google Chrome (10 profiles)**. If `Service Worker\Database\CURRENT` is missing/empty, or `ScriptCache\index` is missing, has `0` payload files, has fewer `_0` script entries than active extensions in LevelDB `.ldb`/`.log`, contains a `.log` `type=0` deletion tombstone, or has a `CreationTime` more than 2 minutes newer than `Database\CURRENT`, and the profile is closed (`Database\LOCK` is not held), it atomically resets `Database`, `ScriptCache`, and `CacheStorage` together so Chromium cleanly re-registers all Service Workers on the very first launch.
 
 ### 4.2 Dedicated Forensic & Recovery Tool (`scripts/fix-brave-extensions.ps1`)
 Authored `scripts/fix-brave-extensions.ps1` (and 1-click launcher `launchers/Fix-Brave-Extensions.bat`) which:
 1. Disables Windows Power Throttling on `brave.exe` (`powercfg /powerthrottling disable /path "...\brave.exe"`).
 2. Elevates any running `Idle` (`BasePriority 4`) `brave.exe` processes back to `Normal` (`BasePriority 8`).
-3. Parses LevelDB `.ldb` SSTables and `.log` WriteBatches in `<Profile>\Service Worker\Database` across all profiles to detect `type=0` (`kTypeDeletion`) records for `REG:chrome-extension://...`, missing `ScriptCache` payloads, or `CreationTime` desynchronization.
-4. Atomically resets `Service Worker\Database`, `ScriptCache`, and `CacheStorage` on all unlocked/closed profiles (**14 profiles fixed automatically**) without touching `Local Extension Settings`, `Sync Extension Settings`, or `IndexedDB`.
+3. Parses LevelDB `.ldb` SSTables (using compiled `[a-p]{32}` extraction to handle LevelDB `shared_bytes` prefix delta encoding and Snappy LZ77 back-references) and `.log` WriteBatches (`[typeByte][keyLenByte]"REG:chrome-extension://<32-id>"`) in `<Profile>\Service Worker\Database` across all profiles to detect `type=0` (`kTypeDeletion`) records, missing `ScriptCache` payloads, or `CreationTime` desynchronization in ~485 ms.
+4. Atomically resets `Service Worker\Database`, `ScriptCache`, and `CacheStorage` on all unlocked/closed profiles (**14 Brave profiles + 10 Chrome profiles fixed automatically**) without touching `Local Extension Settings`, `Sync Extension Settings`, or `IndexedDB`.
 
 ### 4.3 Critical Operational Safeguard: `brave://restart` vs Extension Toggle
 > ⚠️ **WARNING — DO NOT TOGGLE TAB SUSPENDER OFF IN `brave://extensions`:**  
