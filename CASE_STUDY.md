@@ -23,6 +23,8 @@ Over an extended engineering lifecycle, a hardware-constrained developer machine
    * Headless integration tests generated 66 orphaned `puppeteer_dev_chrome_profile-*` directories in `$env:TEMP` totaling **1.15 GB**, accompanied by 600 MB of uninstalled Docker Desktop update packages.
 5. **Incident E: Desktop Shell Input Latency & Paging Lag**  
    * Typing and window switching exhibited perceptible hesitance due to default Windows NT quantum allocations, uncompressed system binaries, and kernel executive page-outs.
+6. **Incident F: Chromium Manifest V3 Service Worker Desynchronization & EcoQoS Starvation**  
+   * After executing `Optimize-Clean`, Brave Manifest V3 extensions (specifically **Tab Suspender** `fiabciakcmgepblmdkmemdbbkilneeeh` v2.0.12) became completely unresponsive across profiles on the first browser launch due to `Service Worker\ScriptCache` deletion without resetting `Service Worker\Database`, compounded by 14 `brave.exe` processes throttled to `Idle` (`BasePriority 4`) by Windows EcoQoS and multi-megabyte `IndexedDB` / `Local Extension Settings` bloat.
 
 ---
 
@@ -126,6 +128,20 @@ To address typing lag and window transition delays on the Intel i5 dual-core arc
 
 ---
 
+### Incident F: Chromium Manifest V3 Service Worker Desynchronization & EcoQoS Starvation
+Following execution of `Optimize-Clean 2xmg.bat` (`scripts/optimize.ps1 -Mode Clean`), the user reported that Brave extensions—specifically **Tab Suspender v2.0.12** (`fiabciakcmgepblmdkmemdbbkilneeeh`)—did not respond when clicked across multiple Brave profiles.
+
+**Forensic Analysis:**
+* **LevelDB vs `ScriptCache` Split-Brain:** In `optimize.ps1` v2.0, `Invoke-Clean` included `"Service Worker\ScriptCache"` and `"Service Worker\CacheStorage"` inside `$cacheDirs` while leaving `"Service Worker\Database"` untouched. When Brave launched after a clean run, `Service Worker\Database` still held active registration records (`REG:chrome-extension://fiabciakcmgepblmdkmemdbbkilneeeh/`, `type=1`), but the underlying worker bytecode (`worker.js` and 30 `importScripts` dependencies) in `ScriptCache` had been wiped. Chromium threw `ServiceWorkerStatusCode::kErrorDiskCache` and wrote a LevelDB deletion tombstone (`type=0` / `kTypeDeletion`) to `Database\*.log`, killing the extension for the entire first browser session (recovering only on a second restart via `RE_REGISTER_ON_STATE_MISMATCH`).
+* **Windows EcoQoS Throttling:** Process inspection revealed **14 `brave.exe` processes** demoted to `PriorityClass = Idle` (`BasePriority 4`) by Windows Power Throttling / Efficiency Mode.
+* **Extension Storage Bloat:** Tab Suspender's screenshot capture accumulated heavy IndexedDB/LevelDB footprints across profiles (`Profile 9`: 36.93 MB IndexedDB / 456 blobs + 17.59 MB Local Extension Settings / >180,000 keys; `Profile 2`: 15.79 MB + 25.50 MB; `Profile 6`: 16.76 MB + 13.73 MB; `Profile 22`: 14.30 MB + 13.22 MB; `Profile 10`: 10.32 MB + 14.88 MB).
+
+**Remediation:**
+1. Removed `"Service Worker\ScriptCache"` and `"Service Worker\CacheStorage"` from `$cacheDirs` in `scripts/optimize.ps1` for both Brave and Chrome, and added an atomic self-healing routine that resets `Database`, `ScriptCache`, and `CacheStorage` together on closed profiles whenever `ScriptCache` is out of sync with `Database`.
+2. Authored `scripts/fix-brave-extensions.ps1` to disable Windows Power Throttling for `brave.exe` (`powercfg /powerthrottling disable`), elevate `Idle` processes to `Normal`, scan LevelDB `.ldb`/`.log` WriteBatches across all 18 profiles, and atomically reset 14 closed profiles while instructing `brave://restart` for open profiles (avoiding `brave://extensions` toggle-off, which would close hundreds of suspended `park.html` tabs).
+
+---
+
 ## 3. Empirical Verdict & Verification Matrix
 
 | Component | Pre-Incident Metric | Post-Incident Metric | Verification Mechanism |
@@ -137,6 +153,7 @@ To address typing lag and window transition delays on the Intel i5 dual-core arc
 | **Menu Latency** | 100 - 400 ms | **0 ms** | User Experience & Desktop Benchmark |
 | **Kernel Paging** | Paged to SSD | **Locked in RAM** | Registry `DisablePagingExecutive = 1` |
 | **OS Footprint** | Uncompressed | **CompactOS Active** | `compact /compactos:query` |
+| **Brave MV3 Service Workers** | Dead on 1st Session (`type=0` + 14 `Idle` Procs) | **14 Closed Profiles Healed + EcoQoS Disabled** | `scripts/fix-brave-extensions.ps1` & LevelDB scan |
 
 ---
 
@@ -146,3 +163,5 @@ To address typing lag and window transition delays on the Intel i5 dual-core arc
 2. **Headless Test Lifecycles:** Test automation scripts must implement strict `try...finally` teardown routines to clean temporary browser user data directories (`puppeteer_dev_chrome_profile-*`).
 3. **Electron Window Drift:** Multi-monitor Electron applications running on mobile workstations require bounds-checking against current display topology to prevent off-screen rendering traps.
 4. **Kernel Executive Protection on 8GB Systems:** Locking kernel drivers in RAM (`DisablePagingExecutive`) provides disproportionately large responsiveness improvements on dual-core systems by eliminating disk IOPS contention.
+5. **Chromium Service Worker Storage Atomicity:** Never purge `<Profile>\Service Worker\ScriptCache` or `CacheStorage` independently of `<Profile>\Service Worker\Database`; partial deletion breaks LevelDB-to-SimpleCache resource pointers (`kErrorDiskCache`) and kills Manifest V3 extension workers.
+

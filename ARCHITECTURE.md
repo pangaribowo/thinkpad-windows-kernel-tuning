@@ -222,3 +222,22 @@ By activating **Compound TCP (CTCP)** via `netsh int tcp set supplemental templa
 2. A delay-based window ($dwnd$) monitoring Round Trip Time (RTT) variations.
 
 When latency spikes are detected, CTCP scales back transmission preemptively without waiting for packet drops or TCP retransmissions, maintaining lower queue latency during concurrent operations.
+
+---
+
+## 8. Chromium Manifest V3 Service Worker Storage Coupling & Windows EcoQoS Internals
+
+### 8.1 LevelDB (`Service Worker\Database`) vs SimpleCache (`Service Worker\ScriptCache`)
+In Chromium's Manifest V3 extension architecture, persistent background pages (`background.html`) are replaced by ephemeral **Service Workers** managed by `content::ServiceWorkerRegistry`. On disk, each profile maintains two interdependent storage engines inside `<Profile>\Service Worker\`:
+
+1. **`Database\` (LevelDB):** Stores serialized `ServiceWorkerRegistrationData` and resource list records keyed by `REG:<origin>` (e.g., `REG:chrome-extension://fiabciakcmgepblmdkmemdbbkilneeeh/`). In LevelDB's Write-Ahead Log (`.log`), mutations are appended as `WriteBatch` records where byte `[offset - 2]` encodes the value type (`0x01` = `kTypeValue` active registration; `0x00` = `kTypeDeletion` deleted registration) and byte `[offset - 1]` encodes the varint key length.
+2. **`ScriptCache\` (Chromium SimpleCache):** Stores the physical script bodies (`<resource_id>_0`) and V8 code cache bytecode (`<resource_id>_1`) referenced by the `resource_id` pointers inside `Database\`.
+
+**The Split-Brain Failure Mode (`ServiceWorkerStatusCode::kErrorDiskCache`):**
+If an external cleaner deletes `ScriptCache\*` while leaving `Database\` intact, the next browser session reads `REG:chrome-extension://<id>/` (`type=1`) from `Database\`, skips initial extension script installation, and attempts to wake the Service Worker by reading `worker.js` from `ScriptCache\`. When `SimpleCache` returns `ERR_CACHE_MISS`, Chromium's `ServiceWorkerScriptLoader` raises `kErrorDiskCache` and issues an internal `DeleteRegistration` WriteBatch (`type=0`) to LevelDB. The extension remains dead for the remainder of the first session and only re-registers on the *second* browser launch when `ExtensionRegistrar` observes the missing registration (`RE_REGISTER_ON_STATE_MISMATCH`).
+
+### 8.2 Windows NT Power Throttling (`EcoQoS` / `BasePriority 4`)
+Windows 10/11 exposes `SetProcessInformation(..., ProcessPowerThrottling, ...)` (`PROCESS_POWER_THROTTLING_EXECUTION_SPEED`). When applied to background Chromium renderer and extension worker processes:
+* The process base priority is lowered to `Idle` (`BasePriority = 4`), placing threads below `Normal` (`BasePriority = 8`) in the NT scheduler queue.
+* On a 2-core / 4-thread Skylake-U processor (`i5-6300U`), `BasePriority 4` extension workers attempting to load 30+ synchronous `importScripts()` modules and query multi-megabyte `IndexedDB` / `Local Extension Settings` stores experience severe scheduling starvation unless `brave.exe` is exempted via `powercfg /powerthrottling disable /path <exe>` and elevated to `Normal` priority.
+

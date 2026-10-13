@@ -38,6 +38,7 @@ All metrics represent **reproducible, empirically measured production data** cap
 | **WSL2 / Docker RAM Allocation** | **50% Host RAM (Up to 4.0 GB)** | **2.50 GB Cap + Page Reporting** | **Zero Host RAM Starvation** |
 | **Automated Test Profile Leaks** | **66 Orphaned Folders (~1.15 GB in Temp)** | **Automated Clean via `optimize.ps1` v2.0** | **100% Automated Garbage Collection** |
 | **OS Footprint Compression** | *Uncompressed NTFS System Files* | *CompactOS XPRESS/LZX Kernel Compression* | **+2.5 to 4.0 GB Permanent Disk Gain** |
+| **Chromium MV3 Service Workers** | **Dead on 1st Session** *(`kErrorDiskCache` / `type=0` + 14 `Idle` Procs)* | **Atomic Self-Heal + EcoQoS Disabled (`Never On`)** | **14 Closed Profiles Healed + Zero `ScriptCache` Desync** |
 
 ---
 
@@ -47,7 +48,8 @@ All metrics represent **reproducible, empirically measured production data** cap
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        USER & APPLICATION LAYER                        │
 │  • Upgraded Routine Scrubber: Temp, Puppeteer Profiles, Multi-Brave    │
-│  • Chromium Enterprise Policies: HighEfficiencyMode, Tab Discarding   │
+│  • Chromium MV3 Service Worker Integrity: LevelDB ↔ ScriptCache Sync   │
+│  • Chromium Enterprise Policies: HighEfficiencyMode, EcoQoS Exemption  │
 │  • Multi-Threaded Git Engine: core.fscache, core.preloadindex          │
 ├────────────────────────────────────────────────────────────────────────┤
 │                      SHELL & INPUT RESPONSIVENESS                      │
@@ -87,6 +89,7 @@ All metrics represent **reproducible, empirically measured production data** cap
 ├── ARCHITECTURE.md                # Deep-dive into Windows Internals, NDIS, CompactOS & Memory
 ├── LICENSE                        # MIT License
 ├── docs/                          # Specialized Technical Runbooks & Forensic Post-Mortems
+│   ├── CHROMIUM_MV3_SERVICE_WORKER_FORENSICS.md # MV3 Service Worker LevelDB vs ScriptCache desync & EcoQoS triage
 │   ├── NDIS_FILTER_COLLISION_TRIAGE.md     # ICS crash post-mortem & oracle_VBoxNetLwf decoupling
 │   ├── START_MENU_INPUT_LATENCY_RUNBOOK.md # Windows Key & SearchApp zero-latency tuning
 │   ├── ELECTRON_HEADLESS_DRIFT_TRIAGE.md   # Electron viewport drift & zombie process recovery
@@ -94,16 +97,18 @@ All metrics represent **reproducible, empirically measured production data** cap
 │   ├── COMPACTOS_NTFS_COMPRESSION_GUIDE.md # CompactOS XPRESS/LZX kernel transparent compression
 │   └── THINKPAD_T470_HARDWARE_SUBSYSTEM_TUNING.md # T470 Power Bridge, Wi-Fi 8260 MIMO & Memory Compression
 ├── scripts/
-│   ├── optimize.ps1               # Automated Maintenance Engine v2.0 (Status, Clean, Tune)
+│   ├── optimize.ps1               # Automated Maintenance Engine v2.1 (Status, Clean, Tune + SW Self-Heal)
+│   ├── fix-brave-extensions.ps1   # Brave MV3 Service Worker LevelDB/ScriptCache & EcoQoS recovery tool
 │   ├── tune-responsiveness.ps1    # Input latency, typing responsiveness & shell animator tuner
 │   ├── setup-kernel.ps1           # Kernel scheduler, priority separation & responsiveness
 │   ├── setup-wsl.ps1              # WSL2/Docker memory ceiling & page reporting setup
 │   ├── setup-git.ps1              # Git multi-threaded caching & filesystem optimization
-│   └── setup-brave.ps1            # Chromium / Brave enterprise memory saver deployment
+│   └── setup-brave.ps1            # Chromium / Brave enterprise memory saver & EcoQoS exemption
 └── launchers/
     ├── System-Status.bat          # 1-Click interactive system diagnostics terminal
     ├── Optimize-Clean.bat         # 1-Click routine cache & temporary data scrubber
-    └── Tune-Responsiveness.bat    # 1-Click input latency & UI snappiness applicator
+    ├── Tune-Responsiveness.bat    # 1-Click input latency & UI snappiness applicator
+    └── Fix-Brave-Extensions.bat   # 1-Click Brave MV3 Service Worker & EcoQoS recovery launcher
 ```
 
 ---
@@ -127,19 +132,25 @@ cd thinkpad-windows-kernel-tuning
 powershell -ExecutionPolicy Bypass -File .\scripts\optimize.ps1 -Mode Status
 ```
 
-### 3. Run Automated Cache & Test Artifact Scrubbing (v2.0)
-Reclaims 2 to 5+ GB of temporary files, Puppeteer test dumps, multi-profile browser caches, and updaters:
+### 3. Run Automated Cache & Test Artifact Scrubbing (v2.1)
+Reclaims 2 to 5+ GB of temporary files, Puppeteer test dumps, multi-profile browser caches, and updaters while preserving and self-healing Chromium Manifest V3 Service Worker stores:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\optimize.ps1 -Mode Clean
 ```
 
-### 4. Apply High-Tier Responsiveness & Input Latency Tuning
+### 4. Audit & Recover Brave Manifest V3 Extension Service Workers
+Detects LevelDB WriteBatch deletion tombstones (`type=0`) and `ScriptCache` desynchronization across all Brave profiles, disables Windows EcoQoS Power Throttling on `brave.exe`, and restores `Idle` processes to `Normal`:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\fix-brave-extensions.ps1
+```
+
+### 5. Apply High-Tier Responsiveness & Input Latency Tuning
 Eliminates keyboard repeat hesitation, window transition lag, and unbinds conflicting network filter drivers:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\tune-responsiveness.ps1
 ```
 
-### 5. Enable Kernel CompactOS Compression (One-Time)
+### 6. Enable Kernel CompactOS Compression (One-Time)
 Compresses Windows system files using native kernel XPRESS/LZX algorithms:
 ```powershell
 compact /compactos:always
@@ -150,13 +161,14 @@ compact /compactos:always
 ## 📖 Deep Technical Documentation & Runbooks
 
 ### 🏛️ Core Architectural Documents
-* 📄 **[CASE_STUDY.md](CASE_STUDY.md)** — Step-by-step incident response, NDIS crash forensics (`ipnathlp.dll`), Puppeteer artifact leakage, and storage recovery methodologies.
-* 🧠 **[ARCHITECTURE.md](ARCHITECTURE.md)** — Technical deep-dive into NT Quantum Scheduling, CompactOS compression algorithms, NDIS 6.x Lightweight Filters, and Win32 Raw Input queue dynamics.
+* 📄 **[CASE_STUDY.md](CASE_STUDY.md)** — Step-by-step incident response, NDIS crash forensics (`ipnathlp.dll`), Puppeteer artifact leakage, Chromium MV3 Service Worker desynchronization, and storage recovery methodologies.
+* 🧠 **[ARCHITECTURE.md](ARCHITECTURE.md)** — Technical deep-dive into NT Quantum Scheduling, CompactOS compression algorithms, NDIS 6.x Lightweight Filters, Win32 Raw Input queue dynamics, and Chromium Service Worker LevelDB/SimpleCache storage coupling.
 
 ### 📚 Specialized Deep-Dive Guides (`docs/`)
 
 | Document | Scope & Technical Engineering Coverage |
 | :--- | :--- |
+| **[docs/CHROMIUM_MV3_SERVICE_WORKER_FORENSICS.md](docs/CHROMIUM_MV3_SERVICE_WORKER_FORENSICS.md)** | **Chromium MV3 Service Worker Desynchronization & EcoQoS Post-Mortem:** Root-cause analysis of why wiping `Service Worker\ScriptCache` without `Database` induces `kErrorDiskCache` (`type=0`), Windows EcoQoS `Idle` priority starvation across 14 `brave.exe` processes, and atomic recovery without losing suspended `park.html` tabs. |
 | **[docs/THINKPAD_T470_HARDWARE_SUBSYSTEM_TUNING.md](docs/THINKPAD_T470_HARDWARE_SUBSYSTEM_TUNING.md)** | **ThinkPad T470 Hardware & Subsystem Blueprint:** Full architectural tuning covering Memory Compression, Defender developer throttling, Wi-Fi 8260 dual-antenna MIMO, Power Bridge sleep drain, SpeedShift, and dual-channel upgrade path. |
 | **[docs/NDIS_FILTER_COLLISION_TRIAGE.md](docs/NDIS_FILTER_COLLISION_TRIAGE.md)** | **ICS Subsystem Access Violation Post-Mortem:** Forensic investigation into `ipnathlp.dll` crash (`0xc0000005`) caused by VirtualBox `oracle_VBoxNetLwf` NDIS6 filter driver, with programmatic decoupling runbook. |
 | **[docs/START_MENU_INPUT_LATENCY_RUNBOOK.md](docs/START_MENU_INPUT_LATENCY_RUNBOOK.md)** | **Windows Key & SearchApp Input Latency:** Low-level anatomy of Start Menu delays, Bing Web Search API elimination, Cortana consent decoupling, and sub-30ms local-only search configuration. |
