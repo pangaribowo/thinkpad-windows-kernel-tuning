@@ -21,3 +21,11 @@ Write-Host "[OK] GPU Hardware Offload enabled" -ForegroundColor Green
 Set-ItemProperty -Path $bravePolicy -Name "DiskCacheSize" -Value 268435456 -Type DWord
 Set-ItemProperty -Path $bravePolicy -Name "MediaCacheSize" -Value 134217728 -Type DWord
 Write-Host "[OK] Disk Cache capped at 256MB per profile" -ForegroundColor Green
+
+# 4. Exempt Brave Executable from Windows EcoQoS Power Throttling (Prevent MV3 Extension Service Worker Starvation)
+$braveExe = "$env:LOCALAPPDATA\BraveSoftware\Brave-Browser\Application\brave.exe"
+if (Test-Path $braveExe) {
+    powercfg /powerthrottling disable /path $braveExe 2>&1 | Out-Null
+    Write-Host "[OK] Windows Power Throttling disabled for brave.exe (Never On)" -ForegroundColor Green
+}
+

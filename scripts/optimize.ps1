@@ -154,7 +154,9 @@ function Invoke-Clean {
     $braveFreed = 0
     $braveProfiles = Get-ChildItem $braveBase -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "Profile*" -or $_.Name -eq "Default" }
     foreach ($bp in $braveProfiles) {
-        $cacheDirs = @("Cache", "Code Cache", "GPUCache", "DawnGraphiteCache", "DawnWebGPUCache", "GrShaderCache", "ShaderCache", "Service Worker\ScriptCache", "Service Worker\CacheStorage")
+        # Note: Do NOT delete "Service Worker\ScriptCache" or "Service Worker\CacheStorage" alone,
+        # as doing so desynchronizes Service Worker\Database and breaks Manifest V3 extensions (e.g., Tab Suspender).
+        $cacheDirs = @("Cache", "Code Cache", "GPUCache", "DawnGraphiteCache", "DawnWebGPUCache", "GrShaderCache", "ShaderCache")
         foreach ($cd in $cacheDirs) {
             $cPath = Join-Path $bp.FullName $cd
             if (Test-Path $cPath) {
@@ -162,6 +164,38 @@ function Invoke-Clean {
                 Remove-Item "$cPath\*" -Recurse -Force -ErrorAction SilentlyContinue
                 $braveFreed += $size
             }
+        }
+
+        # Self-heal closed profiles if Service Worker\ScriptCache was previously wiped out of sync with Database
+        $swPath = Join-Path $bp.FullName "Service Worker"
+        $swDbPath = Join-Path $swPath "Database"
+        $swScPath = Join-Path $swPath "ScriptCache"
+        $swCsPath = Join-Path $swPath "CacheStorage"
+        $dbCurrent = Get-Item (Join-Path $swDbPath "CURRENT") -ErrorAction SilentlyContinue
+        if ($dbCurrent) {
+            $scIndex = Get-Item (Join-Path $swScPath "index") -ErrorAction SilentlyContinue
+            $scPayloads = @(if (Test-Path $swScPath) { Get-ChildItem $swScPath -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin @("index", "the-real-index") } })
+            if ((-not $scIndex) -or ($scPayloads.Count -eq 0) -or (($scIndex.CreationTime - $dbCurrent.CreationTime).TotalMinutes -gt 2)) {
+                $lockFile = Join-Path $swDbPath "LOCK"
+                $isLocked = $false
+                if (Test-Path $lockFile) {
+                    $fsLock = $null
+                    try {
+                        $fsLock = [System.IO.File]::Open($lockFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+                    } catch { $isLocked = $true }
+                    finally { if ($fsLock) { $fsLock.Dispose() } }
+                }
+                if (-not $isLocked) {
+                    if (Test-Path $swDbPath) { Remove-Item $swDbPath -Recurse -Force -ErrorAction SilentlyContinue }
+                    if (Test-Path $swScPath) { Remove-Item $swScPath -Recurse -Force -ErrorAction SilentlyContinue }
+                    if (Test-Path $swCsPath) { Remove-Item $swCsPath -Recurse -Force -ErrorAction SilentlyContinue }
+                    Write-Ok "Re-synced Service Worker storage on closed profile ($($bp.Name))"
+                }
+            }
+        } elseif ((Test-Path $swScPath) -or (Test-Path $swCsPath)) {
+            if (Test-Path $swScPath) { Remove-Item $swScPath -Recurse -Force -ErrorAction SilentlyContinue }
+            if (Test-Path $swCsPath) { Remove-Item $swCsPath -Recurse -Force -ErrorAction SilentlyContinue }
+            Write-Ok "Cleaned orphaned Service Worker cache on closed profile ($($bp.Name))"
         }
     }
     $freedTotal += $braveFreed
@@ -172,7 +206,8 @@ function Invoke-Clean {
     $chromeFreed = 0
     $chromeProfiles = Get-ChildItem $chromeBase -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "Profile*" -or $_.Name -eq "Default" }
     foreach ($cp in $chromeProfiles) {
-        $cacheDirs = @("Cache", "Code Cache", "GPUCache", "Service Worker\CacheStorage")
+        # Exclude Service Worker\ScriptCache and Service Worker\CacheStorage to preserve MV3 extension registrations
+        $cacheDirs = @("Cache", "Code Cache", "GPUCache")
         foreach ($cd in $cacheDirs) {
             $cPath = Join-Path $cp.FullName $cd
             if (Test-Path $cPath) {
